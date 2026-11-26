@@ -11,6 +11,15 @@ MDD — an OpenClassrooms full-stack project: a developer social network where u
 
 The project is early-stage: only `GET /topic` is implemented end-to-end on the server; `Post`/`Comment` entities and `PostService` are still in progress.
 
+## Working mode: step-by-step course
+
+The user is following an OpenClassrooms course step by step and will paste each step's instructions (consignes) as the task. When that happens:
+
+- Do **only** what the current step asks; don't build later steps or features ahead of time, even if they appear in the target conventions or the target API below.
+- The step's instructions win over this file. If a step contradicts a convention here (naming, library, structure…), follow the step, point out the conflict, and offer to update this file.
+- If a step's instructions are ambiguous, ask before coding.
+- At the end, say which parts of the step are done and what the user still has to do themselves (e.g. a deliverable or a manual check).
+
 ## Commands
 
 ### Backend (run from `back/`)
