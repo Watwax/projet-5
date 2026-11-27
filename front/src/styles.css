@@ -1,1 +1,18 @@
-/* You can add global styles to this file, and also import other style files */
+/*
+ * Global styles for MDD.
+ * Design tokens (colours, fonts, spacing, breakpoints) are declared as CSS custom
+ * properties on :root and must be taken from the Figma mockups (desktop + mobile).
+ */
+:root {
+  /* Design tokens: to be filled from the Figma mockups. */
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
