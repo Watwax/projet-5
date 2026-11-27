@@ -1,0 +1,10 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.compile.nullAnalysis.mode": "automatic",
+  "jest.rootPath": "front",
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/.angular": true
+  }
+}
