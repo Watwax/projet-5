@@ -18,7 +18,10 @@ Travaille dans `back/` (package racine `com.openclassrooms.mddapi`). Avance éta
    - **Validation** (`spring-boot-starter-validation`) dès qu'un endpoint reçoit un body.
    - **Lombok** (`org.projectlombok:lombok`, `<optional>true</optional>`), déclaré aussi dans `maven-compiler-plugin` → `annotationProcessorPaths`, comme le fait Spring Initializr. Il doit aussi être exclu du jar dans `spring-boot-maven-plugin`.
    - **Pas de MapStruct** ni d'autre librairie de mapping : les mappers sont écrits à la main.
-   - **Spring Security + JWT** (`spring-boot-starter-security`, `io.jjwt:jjwt-api/impl/jackson`) seulement si la feature touche à l'authentification.
+   - **Spring Security + JWT** (`spring-boot-starter-security`, `io.jjwt:jjwt-api/impl/jackson` 0.12.x) seulement si la feature touche à l'authentification.
+   - **Swagger** (`org.springdoc:springdoc-openapi-starter-webmvc-ui`, version compatible avec Spring Boot 3.5) dès le premier controller ajouté ou modifié, avec `springdoc.swagger-ui.path=/api/swagger` et `springdoc.api-docs.path=/api/openapi`. Exemple fonctionnel : `../../Projet3/chatop` (`config/OpenApiConfiguration.java`, `application.properties`).
+   - **Tests** : `com.h2database:h2` en scope `test` pour les tests d'intégration, et `jacoco-maven-plugin` (goals `prepare-agent` + `report`) pour la couverture. Exemple : le pom de `../../Projet4/Testez-et-am-liorez-une-application-full-stack/back`.
+   - **Secrets** : si `back/.env` n'existe pas encore, ajoute `spring.config.import=optional:file:.env[.properties]` dans `application.properties`, remplace les valeurs en dur (`spring.datasource.username/password`, secret JWT) par `${DB_USERNAME}`, `${DB_PASSWORD}`, `${JWT_SECRET}`…, crée `back/.env.example` (versionné, sans vraie valeur) et ajoute `.env` au `.gitignore`. Préviens l'utilisateur qu'il doit créer son `back/.env`.
 4. Si la feature a besoin d'un utilisateur connecté et que Spring Security n'est pas encore configuré, **ne le monte pas en douce dans une autre feature**. Préviens l'utilisateur et propose de faire d'abord la feature « authentification ».
 
 ## 1. Entité (`model/`)
@@ -40,9 +43,9 @@ Travaille dans `back/` (package racine `com.openclassrooms.mddapi`). Avance éta
 
 `public interface XxxRepository extends JpaRepository<Xxx, Long>`. Privilégie les requêtes dérivées (`findByTopicIdOrderByCreatedAtDesc`) ; n'utilise `@Query` que si nécessaire.
 
-## 3. DTO (`dto/`)
+## 3. DTO (`dto/request/` et `dto/response/`)
 
-- Des `record` Java : `XxxDto` pour la sortie, `CreateXxxRequest` / `UpdateXxxRequest` pour l'entrée.
+- Des `record` Java : `CreateXxxRequest` / `UpdateXxxRequest` dans `dto/request/` pour l'entrée, `XxxDto` dans `dto/response/` pour la sortie.
 - **Les controllers n'exposent jamais d'entité JPA.** Aucun DTO de sortie ne contient de mot de passe ou de hash.
 - Pour les relations, aplatis ce qui est utile au front (`topicId`, `topicName`, `authorUsername`) plutôt que d'imbriquer des objets entiers.
 - Les requêtes sont validées avec Bean Validation (`@NotBlank`, `@Email`, `@Size`…) et le controller met `@Valid` sur le `@RequestBody`.
@@ -88,7 +91,9 @@ public class PostMapper {
 - Une interface `IXxxService` et une implémentation `XxxService` annotée `@Service` (attention : `PostService` n'a pas encore cette annotation, à corriger si tu y touches).
 - Injection par constructeur : `@RequiredArgsConstructor` et champs `private final`.
 - Le service reçoit et renvoie des DTO. La conversion entité ↔ DTO se fait ici, via le mapper.
-- Ressource absente : `throw new ResponseStatusException(HttpStatus.NOT_FOUND, "...")`. Email ou nom d'utilisateur déjà pris : `HttpStatus.CONFLICT` (409).
+- Erreurs métier : lève une exception dédiée de `exception/` (`ResourceNotFoundException` → 404, `ConflictException` → 409 pour un email ou un nom d'utilisateur déjà pris, `InvalidCredentialsException` → 401…), avec un message en français. Crée-la si elle n'existe pas.
+- Une seule classe `exception/GlobalExceptionHandler` (`@RestControllerAdvice`, qui peut étendre `ResponseEntityExceptionHandler`) transforme ces exceptions en **`ProblemDetail`** (RFC 9457) avec le bon status. Pour les erreurs de validation (400), ajoute une propriété `errors` : `{ "champ": "message" }`. Ne renvoie jamais de corps vide, contrairement au `GlobalExceptionHandler` du Projet 3.
+- **JavaDoc** sur chaque méthode publique de l'interface du service : ce qu'elle fait, ses paramètres, son retour et les exceptions levées.
 - L'auteur d'un article ou d'un commentaire est l'utilisateur courant, rechargé depuis son id (le sujet du JWT).
 - Fil d'actualité : articles des thèmes auxquels l'utilisateur est abonné, triés par `createdAt` via `Sort.by(direction, "createdAt")`. Le sens vient du paramètre `sort` (`desc` par défaut). Charge l'auteur et le thème sans requêtes N+1 (`@EntityGraph` ou `JOIN FETCH`).
 - S'abonner deux fois au même thème, ou se désabonner d'un thème non suivi, ne doit pas provoquer d'erreur : ces opérations sont idempotentes.
@@ -101,16 +106,19 @@ public class PostMapper {
 - Il dépend de l'**interface** du service, injectée par constructeur.
 - Il renvoie des DTO, avec `ResponseEntity` quand le code HTTP n'est pas 200 (`201 Created` pour une création).
 - Utilisateur courant : `@AuthenticationPrincipal`. Ne prends jamais l'id de l'auteur dans le body de la requête.
+- **JavaDoc** sur chaque méthode d'endpoint, et annotations OpenAPI pour Swagger : `@Tag` sur la classe, `@Operation(summary = ...)` et les `@ApiResponse` des codes d'erreur possibles sur chaque méthode. Vérifie que l'endpoint apparaît bien dans Swagger UI (`/api/swagger`).
 
 ## 7. Sécurité (quand Spring Security est en place)
 
-- Toutes les routes sont authentifiées sauf `/api/auth/**`.
+- Toutes les routes sont authentifiées sauf `/api/auth/**` et les chemins Swagger (`/api/swagger/**`, `/api/swagger-ui/**`, `/api/openapi/**`). Déclare le schéma de sécurité Bearer JWT dans la config OpenAPI pour pouvoir tester les routes protégées depuis Swagger UI.
+- Une requête sans token ou avec un token invalide renvoie **401** avec un ProblemDetail (`authenticationEntryPoint`), pas 403.
+- Exemple fonctionnel de `JwtService`, `JwtAuthenticationFilter` et `SecurityConfiguration` : `../../Projet3/chatop/src/main/java/com/openclassrooms/chatop/security/`. Attention, chatop met l'email dans le sujet du token : ici, c'est l'id (voir plus bas).
 - Sessions stateless, JWT dans `Authorization: Bearer <token>`, mots de passe hashés avec `BCryptPasswordEncoder`.
 - **Le sujet du JWT est l'id de l'utilisateur.** Il ne faut pas y mettre l'email ni le username, car ils sont modifiables : changer son profil ne doit pas invalider le token.
 - Connexion : un champ `identifier` qui accepte l'email **ou** le username (`findByEmailOrUsername`). Pour ne pas révéler l'existence d'un compte, renvoie le même message d'erreur 401 que l'identifiant soit inconnu ou le mot de passe faux.
 - La connexion doit persister entre les sessions du navigateur : choisis une durée de validité du token assez longue (par ex. 7 jours), configurable.
 - La déconnexion se fait côté client (suppression du token) : pas d'endpoint de logout.
-- Le secret JWT et sa durée de validité vont dans `application.properties`, sous forme de variables d'environnement avec une valeur par défaut pour le dev.
+- Le secret JWT et sa durée de validité sont lus depuis `.env` (`app.jwt.secret=${JWT_SECRET}`, `app.jwt.expiration-ms=${JWT_EXPIRATION_MS:604800000}`), jamais écrits en dur. Le secret est une clé Base64 de 32 octets minimum (`openssl rand -base64 32`).
 - CORS : inutile en dev grâce au proxy Angular. N'ouvre pas `*`.
 
 ## 8. Tests (`src/test/java/...`, même package que la classe testée)
@@ -118,7 +126,9 @@ public class PostMapper {
 - **Mapper** : test unitaire simple (`new XxxMapper()`), sans Spring ni mock. Vérifie que chaque champ est copié, y compris les champs aplatis des relations.
 - **Service** : test unitaire `@ExtendWith(MockitoExtension.class)`, avec `@Mock` sur le repository, le vrai mapper via `@Spy private XxxMapper mapper = new XxxMapper();` et `@InjectMocks` sur le service. Couvre le cas nominal et le cas d'erreur (404…).
 - **Controller** : `@WebMvcTest(XxxController.class)` + `MockMvc`, et `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean` ; `@MockBean` est déprécié) sur le service. Si la sécurité est active, ajoute `@WithMockUser` et importe la config de sécurité.
-- Lance uniquement les tests concernés : `cd back && mvn test -Dtest='XxxServiceTest,XxxControllerTest'`. `MddApiApplicationTests` a besoin de MySQL : ne t'en sers pas comme preuve que la feature marche.
+- **Intégration** (`XxxIntegrationTest`) : `@SpringBootTest` + `@AutoConfigureMockMvc` sur une base **H2 en mode MySQL**, configurée dans `src/test/resources/application.properties` (`jdbc:h2:mem:mdd;MODE=MySQL;DB_CLOSE_DELAY=-1`, secret JWT de test). Parcours réel avec un vrai token : inscription, connexion, puis appel de l'endpoint ; vérifie aussi le 401 sans token. Un ou deux scénarios par feature suffisent : on teste les cas sensibles, pas toute l'application.
+- Lance uniquement les tests concernés : `cd back && mvn test -Dtest='XxxServiceTest,XxxControllerTest,XxxIntegrationTest'`. Tant que H2 n'est pas en place, `MddApiApplicationTests` a besoin de MySQL : ne t'en sers pas comme preuve que la feature marche.
+- Couverture : `mvn verify`, rapport dans `back/target/site/jacoco/index.html`.
 - Termine par `mvn compile` (ou le test) pour vérifier que Lombok génère bien le code.
 
 ## 9. Fin

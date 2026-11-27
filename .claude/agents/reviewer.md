@@ -24,6 +24,7 @@ Lis `CLAUDE.md` à la racine ainsi que `.claude/skills/back-feature/SKILL.md` et
 - Sécurité : route non protégée qui devrait l'être, auteur pris dans le body au lieu du principal, secret JWT en dur, mot de passe non hashé, absence de contrôle de propriétaire sur un update ou un delete.
 - Codes HTTP incohérents (200 au lieu de 201 ou 404).
 - Mappers écrits à la main : champ oublié ou inversé, NPE sur une relation `null`, champ sensible copié dans un DTO, accès au repository depuis un mapper. Aucune librairie de mapping (MapStruct, ModelMapper) ne doit être ajoutée.
+- Conventions back décidées : DTO rangés dans `dto/request` / `dto/response` ; erreurs levées par des exceptions métier et rendues en ProblemDetail par le `@RestControllerAdvice` (pas de `ResponseStatusException` ni de corps d'erreur vide) ; JavaDoc sur les méthodes publiques des services et controllers ; annotations OpenAPI sur les endpoints ; secrets et identifiants lus depuis `.env`, jamais écrits en dur ni commités.
 
 **Front**
 - Composant non standalone, `*ngIf`/`*ngFor` au lieu de `@if`/`@for`, `@for` sans `track`.

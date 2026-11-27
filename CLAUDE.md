@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 MDD — an OpenClassrooms full-stack project: a developer social network where users follow topics and read/write posts and comments. The repo holds two independent apps:
 
 - `back/` — Spring Boot 3.5 REST API (Java 21, Maven, Spring Data JPA, MySQL), package `com.openclassrooms.mddapi`
-- `front/` — Angular 20 client (Karma/Jasmine tests)
+- `front/` — Angular 20 client (target tests: Jest + Cypress; still Karma/Jasmine until migrated, see below)
 
 The project is early-stage: only `GET /topic` is implemented end-to-end on the server; `Post`/`Comment` entities and `PostService` are still in progress.
 
@@ -29,7 +29,9 @@ mvn test -Dtest=MddApiApplicationTests                # single test class
 mvn test -Dtest=MddApiApplicationTests#contextLoads   # single test method
 ```
 
-Requires a local MySQL with a database `mdd` at `localhost:3306` (credentials `root`/`root`, see `back/src/main/resources/application.properties`). The context-load test also needs this database.
+Requires a local MySQL (installed on the machine, no Docker — decided) with a database `mdd` at `localhost:3306`. Credentials are currently hard-coded `root`/`root` in `back/src/main/resources/application.properties`; target: read them (and the JWT secret) from `back/.env` (git-ignored, template `back/.env.example`) through `spring.config.import=optional:file:.env[.properties]`. The context-load test also needs this database.
+
+Swagger UI (springdoc-openapi, once added): `http://localhost:9000/api/swagger`.
 
 ### Frontend (run from `front/`)
 
@@ -39,9 +41,11 @@ Requires Node ≥ 20.19 / 22.12. The system default `node` on this machine is v1
 npm install
 npm run start                                 # start the dev server (always use this) → http://localhost:4200
 npm run build                                 # output in dist/
-npm test                                      # Karma + Jasmine (Chrome)
-npx ng test --include src/app/topic           # run specs for a single folder/file
+npm test                                      # currently Karma + Jasmine (Chrome)
+npx ng test --include src/app/topic           # run specs for a single folder/file (Karma)
 ```
+
+Target test tooling (decided, not installed yet — migrate when first touching front tests): **Jest** via `jest-preset-angular` for unit tests (`npm test`, `npm run test:coverage`, coverage in `front/coverage/`) and **Cypress** for E2E on sensitive flows (register, login, create post, comment), as in the author's previous project. Karma/Jasmine is deprecated and must be removed during the migration.
 
 No linter is configured.
 
@@ -68,8 +72,10 @@ Currently NgModule-based (not standalone) despite Angular 20: components are dec
 
 New code should move toward these; existing code is migrated when touched:
 
-- **Back**: DTOs (Java records) + hand-written `@Component` mapper classes (no MapStruct or other mapping library) — never expose JPA entities; Lombok (no `@Data` on entities); Spring Security with stateless JWT, all routes under `/api` and authenticated except `/api/auth/**`; Bean Validation (`spring-boot-starter-validation`) for request DTOs.
-- **Front**: standalone components (migrate away from `AppModule`), signals + new control flow (`@if`/`@for`), functional interceptors/guards, relative `/api/...` URLs through an Angular dev proxy to port 9000. No UI library — hand-written styles, shared design tokens as CSS custom properties on `:root` in `src/styles.css`.
+- **Back**: DTOs (Java records) in `dto/request` (input) and `dto/response` (output) + hand-written `@Component` mapper classes (no MapStruct or other mapping library) — never expose JPA entities; Lombok (no `@Data` on entities); Spring Security with stateless JWT (jjwt 0.12), all routes under `/api` and authenticated except `/api/auth/**` and the Swagger paths; Bean Validation (`spring-boot-starter-validation`) for request DTOs; errors as business exceptions in `exception/` turned into **ProblemDetail** (RFC 9457) by a single `@RestControllerAdvice`; API documented with **springdoc-openapi** (Swagger UI at `/api/swagger`, OpenAPI JSON at `/api/openapi`); secrets in `.env`; **JavaDoc** on every public method of services and controllers.
+- **Back tests**: JUnit 5 + Mockito for services and mappers, `@WebMvcTest` + MockMvc for controllers, `@SpringBootTest` integration tests on **H2 in MySQL mode** (test scope, no MySQL needed), coverage with **JaCoCo**.
+- **Front**: standalone components (migrate away from `AppModule`), signals + new control flow (`@if`/`@for`), functional interceptors/guards, relative `/api/...` URLs through an Angular dev proxy to port 9000. No UI library — hand-written styles, shared design tokens as CSS custom properties on `:root` in `src/styles.css`. Tests with Jest + Cypress (see Commands).
+- **Database**: keep `ddl-auto=create` + `data.sql` (topics seed) for the MVP — decided, data loss on restart is accepted; Flyway is a post-MVP evolution.
 
 ## Product scope (MVP) — source: `docsForContext/`
 
@@ -110,7 +116,7 @@ Errors: `400` validation, `401` unauthenticated, `404` unknown resource, `409` e
 
 **Screens** (per the product video): public home with links to login/register → register → login → feed (home when logged in, sort toggle, "create post" button) → topics → post detail with comment form → create-post form → profile (edit form + subscriptions with unsubscribe). Mockups (desktop + mobile) are in Figma: https://www.figma.com/design/Rflr3TVBog35BNMnn0DF09/Maquettes-MDD--desktop-et-mobile-?node-id=0-1&p=f — read them through the Figma MCP tools when available; otherwise ask the user for a screenshot/export of the screen before designing it.
 
-**Deliverable**: `JustificationsDesChoix.docx` must list every technical choice with objective pros and cons, the endpoint table, the test strategy **with coverage**, and the tasks delegated to AI and how they were verified. Work summaries should provide that material.
+**Deliverable**: `JustificationsDesChoix.docx` must list every technical choice with objective pros and cons, the endpoint table, the test strategy **with coverage**, and the tasks delegated to AI and how they were verified. Work summaries should provide that material. Sections 1 and 2 (architecture, choices, API) are drafted; several choices reuse or fix those of the author's previous OpenClassrooms projects (`../../Projet3/chatop`, `../../Projet4/Testez-et-am-liorez-une-application-full-stack`) — look there for working examples (jjwt service, security config, `.env`, Swagger config, Jest/Cypress setup).
 
 ## Project skills and agents
 

@@ -16,14 +16,21 @@ Travaille dans `front/`. Avance étape par étape et ne saute pas les tests.
    - lance `npx ng generate @angular/core:standalone` trois fois, en choisissant successivement « Convert all components, directives and pipes to standalone », « Remove unnecessary NgModule classes » puis « Bootstrap the application using standalone APIs » ;
    - vérifie ensuite que `src/app/app.config.ts` fournit `provideRouter(routes)` et `provideHttpClient(withInterceptors([...]))`, et que `main.ts` utilise `bootstrapApplication`. Crée `app.config.ts` et `app.routes.ts` s'ils manquent, et ajoute `<router-outlet />` dans le template racine ;
    - lance `npm run build` pour valider.
-2. **Proxy API** : l'API tourne sur `http://localhost:9000`, sous le préfixe `/api`. Si `front/proxy.conf.json` n'existe pas, crée-le :
+2. **Outillage de test** : la cible est **Jest** pour les tests unitaires et **Cypress** pour l'E2E. Si `karma.conf.js` existe ou si `angular.json` → `test` utilise encore le builder Karma, **demande à l'utilisateur** s'il veut migrer avant la feature. Si oui :
+   - désinstalle `karma*`, `jasmine-core` et `@types/jasmine` ; installe `jest`, `jest-preset-angular`, `@types/jest` et `jest-environment-jsdom` dans des versions compatibles avec Angular 20 ;
+   - crée `jest.config.js` (preset `jest-preset-angular`, `setupFilesAfterEnv`, couverture dans `coverage/jest` hors `*.spec.ts` et `core/models`) et `setup-jest.ts`, mets à jour `tsconfig.spec.json` (`"types": ["jest"]`), et remplace la cible `test` d'`angular.json` ;
+   - scripts npm : `"test": "jest"`, `"test:coverage": "jest --coverage"`, `"e2e": "cypress run"`, `"cypress:open": "cypress open"` ;
+   - Cypress : `npm i -D cypress`, `cypress.config.ts` avec `baseUrl: 'http://localhost:4200'` et les specs dans `cypress/e2e/` ;
+   - convertis les specs existantes (`jasmine.createSpyObj` → objets `jest.fn()`, `spyOn` → `jest.spyOn`), puis lance `npm test` et `npm run build`.
+   - Exemple fonctionnel (Angular 19) : `../../Projet4/Testez-et-am-liorez-une-application-full-stack/front` (`jest.config.js`, `setup-jest.ts`, `cypress.config.ts`, `cypress/e2e/`). Ne reprends pas sa couverture Cypress via webpack/nyc : elle n'est pas nécessaire ici.
+3. **Proxy API** : l'API tourne sur `http://localhost:9000`, sous le préfixe `/api`. Si `front/proxy.conf.json` n'existe pas, crée-le :
    ```json
    { "/api": { "target": "http://localhost:9000", "secure": false } }
    ```
    puis ajoute `"proxyConfig": "proxy.conf.json"` dans `angular.json` → `serve.options`. Les services appellent des URL relatives (`/api/topic`) : pas d'URL en dur vers `localhost:9000`.
-3. Vérifie le contrat de l'API en lisant le controller et les DTO dans `back/src/main/java/com/openclassrooms/mddapi/`. Ne devine pas les noms de champs. Si l'endpoint n'existe pas encore, appuie-toi sur la table de l'API cible de `CLAUDE.md` et signale qu'il reste à faire côté back (`/back-feature`).
-4. Relis la section « Product scope (MVP) » de `CLAUDE.md` : écrans, règles métier, et ce qui est hors périmètre (pas de back-office, ni d'édition ou suppression d'article, ni de sous-commentaires). Si la demande sort des spécifications, signale-le avant de coder.
-5. **Maquettes Figma** (versions desktop et mobile) : https://www.figma.com/design/Rflr3TVBog35BNMnn0DF09/Maquettes-MDD--desktop-et-mobile-?node-id=0-1&p=f
+4. Vérifie le contrat de l'API en lisant le controller et les DTO dans `back/src/main/java/com/openclassrooms/mddapi/`. Ne devine pas les noms de champs. Si l'endpoint n'existe pas encore, appuie-toi sur la table de l'API cible de `CLAUDE.md` et signale qu'il reste à faire côté back (`/back-feature`).
+5. Relis la section « Product scope (MVP) » de `CLAUDE.md` : écrans, règles métier, et ce qui est hors périmètre (pas de back-office, ni d'édition ou suppression d'article, ni de sous-commentaires). Si la demande sort des spécifications, signale-le avant de coder.
+6. **Maquettes Figma** (versions desktop et mobile) : https://www.figma.com/design/Rflr3TVBog35BNMnn0DF09/Maquettes-MDD--desktop-et-mobile-?node-id=0-1&p=f
    - Avant de créer ou de styler un écran, consulte la maquette de cet écran **dans ses deux versions, desktop et mobile**.
    - Si les outils Figma (`mcp__claude_ai_Figma__*`) sont disponibles, utilise-les pour récupérer la frame correspondante, sa capture d'écran et ses valeurs (couleurs, polices, tailles, espacements).
    - Sinon, demande à l'utilisateur une capture ou un export de l'écran, ou d'activer le connecteur Figma dans claude.ai. **Ne devine jamais le design.**
@@ -110,11 +117,14 @@ Utilise `inject()` plutôt que l'injection par constructeur. Le service ne fait 
 - Un intercepteur fonctionnel `HttpInterceptorFn` ajoute `Authorization: Bearer <token>` aux requêtes `/api/**`, sauf `/api/auth/**`. Il est enregistré dans `provideHttpClient(withInterceptors([jwtInterceptor]))`.
 - Sur une réponse 401, déconnecte l'utilisateur et redirige-le vers la page de connexion.
 
-## 7. Tests (Karma + Jasmine, un `.spec.ts` à côté de chaque fichier)
+## 7. Tests (Jest + Cypress, un `.spec.ts` à côté de chaque fichier)
+
+Si la migration de l'étape 0.2 n'a pas encore été faite, écris les specs avec la syntaxe Jasmine existante et signale-le.
 
 - **Service** : `TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] })` + `HttpTestingController`. Vérifie l'URL et la méthode, puis appelle `httpMock.verify()` dans `afterEach`.
-- **Composant** : `imports: [LeComposant]`, avec les services mockés via `{ provide: XService, useValue: jasmine.createSpyObj(...) }` et `provideRouter([])` si le composant utilise le router. Vérifie le rendu après `fixture.detectChanges()`.
-- Lance seulement les specs concernées : `cd front && npx ng test --watch=false --browsers=ChromeHeadless --include='src/app/features/<feature>/**/*.spec.ts'`.
+- **Composant** : `imports: [LeComposant]`, avec les services mockés via `{ provide: XService, useValue: { methode: jest.fn().mockReturnValue(of(...)) } }` et `provideRouter([])` si le composant utilise le router. Vérifie le rendu après `fixture.detectChanges()`.
+- Lance seulement les specs concernées : `cd front && npx jest src/app/features/<feature>`.
+- **E2E (Cypress)**, seulement pour les parcours sensibles : inscription, connexion (par email et par nom d'utilisateur), création d'un article, ajout d'un commentaire, abonnement. Un fichier `cypress/e2e/<parcours>.cy.ts` par parcours. Le back (MySQL) et le front doivent tourner : `npm run e2e`. Si ce n'est pas possible, écris le scénario et dis à l'utilisateur de le lancer.
 - Termine par `npm run build` pour valider la compilation stricte.
 
 ## 8. Fin
