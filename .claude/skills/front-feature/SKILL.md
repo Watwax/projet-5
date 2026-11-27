@@ -1,6 +1,6 @@
 ---
 name: front-feature
-description: Implémente une feature côté client Angular 20 (dossier front/) — modèle TypeScript, service HTTP, composants standalone, routes et tests — en suivant les conventions du projet MDD. À utiliser pour tout ajout ou modification d'écran, de composant ou d'appel à l'API.
+description: Implémente une feature côté client Angular 22 (dossier front/) — modèle TypeScript, service HTTP, composants standalone, routes et tests — en suivant les conventions du projet MDD. À utiliser pour tout ajout ou modification d'écran, de composant ou d'appel à l'API.
 argument-hint: "<description de la feature, ex: page liste des thèmes avec abonnement>"
 ---
 
@@ -12,22 +12,9 @@ Travaille dans `front/`. Avance étape par étape et ne saute pas les tests.
 
 ## 0. Pré-requis d'architecture (à vérifier à chaque fois)
 
-1. **Standalone** : si `src/app/app.module.ts` existe encore, l'app est toujours en NgModule. **Demande à l'utilisateur** s'il veut migrer avant de commencer la feature. Si oui :
-   - lance `npx ng generate @angular/core:standalone` trois fois, en choisissant successivement « Convert all components, directives and pipes to standalone », « Remove unnecessary NgModule classes » puis « Bootstrap the application using standalone APIs » ;
-   - vérifie ensuite que `src/app/app.config.ts` fournit `provideRouter(routes)` et `provideHttpClient(withInterceptors([...]))`, et que `main.ts` utilise `bootstrapApplication`. Crée `app.config.ts` et `app.routes.ts` s'ils manquent, et ajoute `<router-outlet />` dans le template racine ;
-   - lance `npm run build` pour valider.
-2. **Outillage de test** : la cible est **Jest** pour les tests unitaires et **Cypress** pour l'E2E. Si `karma.conf.js` existe ou si `angular.json` → `test` utilise encore le builder Karma, **demande à l'utilisateur** s'il veut migrer avant la feature. Si oui :
-   - désinstalle `karma*`, `jasmine-core` et `@types/jasmine` ; installe `jest`, `jest-preset-angular`, `@types/jest` et `jest-environment-jsdom` dans des versions compatibles avec Angular 20 ;
-   - crée `jest.config.js` (preset `jest-preset-angular`, `setupFilesAfterEnv`, couverture dans `coverage/jest` hors `*.spec.ts` et `core/models`) et `setup-jest.ts`, mets à jour `tsconfig.spec.json` (`"types": ["jest"]`), et remplace la cible `test` d'`angular.json` ;
-   - scripts npm : `"test": "jest"`, `"test:coverage": "jest --coverage"`, `"e2e": "cypress run"`, `"cypress:open": "cypress open"` ;
-   - Cypress : `npm i -D cypress`, `cypress.config.ts` avec `baseUrl: 'http://localhost:4200'` et les specs dans `cypress/e2e/` ;
-   - convertis les specs existantes (`jasmine.createSpyObj` → objets `jest.fn()`, `spyOn` → `jest.spyOn`), puis lance `npm test` et `npm run build`.
-   - Exemple fonctionnel (Angular 19) : `../../Projet4/Testez-et-am-liorez-une-application-full-stack/front` (`jest.config.js`, `setup-jest.ts`, `cypress.config.ts`, `cypress/e2e/`). Ne reprends pas sa couverture Cypress via webpack/nyc : elle n'est pas nécessaire ici.
-3. **Proxy API** : l'API tourne sur `http://localhost:9000`, sous le préfixe `/api`. Si `front/proxy.conf.json` n'existe pas, crée-le :
-   ```json
-   { "/api": { "target": "http://localhost:9000", "secure": false } }
-   ```
-   puis ajoute `"proxyConfig": "proxy.conf.json"` dans `angular.json` → `serve.options`. Les services appellent des URL relatives (`/api/topic`) : pas d'URL en dur vers `localhost:9000`.
+1. **Environnement** (en place, à ne pas refaire) : Angular 22 standalone et **zoneless** (pas de zone.js), `app.config.ts` (router + `provideHttpClient(withInterceptors([...]))`, où s'enregistrent les intercepteurs), `app.routes.ts`, proxy `/api` → `http://localhost:9000` (`proxy.conf.json`), Jest (`jest-preset-angular`, `setup-jest.ts` en mode zoneless) et Cypress (`cypress/e2e/`). Utilise Node ≥ 24.15 : `export PATH="$HOME/.nvm/versions/node/v24.22.3/bin:$PATH"`.
+2. Zoneless : l'affichage se met à jour via les signals, les événements de template et l'`AsyncPipe`. Ne compte pas sur zone.js : stocke l'état dans des `signal()` / `computed()`, pas dans des propriétés modifiées dans un `subscribe`.
+3. **Proxy API** : les services appellent des URL relatives (`/api/topics`), jamais `localhost:9000` en dur.
 4. Vérifie le contrat de l'API en lisant le controller et les DTO dans `back/src/main/java/com/openclassrooms/mddapi/`. Ne devine pas les noms de champs. Si l'endpoint n'existe pas encore, appuie-toi sur la table de l'API cible de `CLAUDE.md` et signale qu'il reste à faire côté back (`/back-feature`).
 5. Relis la section « Product scope (MVP) » de `CLAUDE.md` : écrans, règles métier, et ce qui est hors périmètre (pas de back-office, ni d'édition ou suppression d'article, ni de sous-commentaires). Si la demande sort des spécifications, signale-le avant de coder.
 6. **Maquettes Figma** (versions desktop et mobile) : https://www.figma.com/design/Rflr3TVBog35BNMnn0DF09/Maquettes-MDD--desktop-et-mobile-?node-id=0-1&p=f
@@ -91,7 +78,7 @@ Utilise `inject()` plutôt que l'injection par constructeur. Le service ne fait 
 
 ## 4. Composants
 
-- Standalone : c'est la valeur par défaut en Angular 20, donc **n'écris ni `standalone: true` ni `standalone: false`**. Déclare les dépendances dans `imports: [...]`.
+- Standalone : c'est la valeur par défaut depuis Angular 19, donc **n'écris ni `standalone: true` ni `standalone: false`**. Déclare les dépendances dans `imports: [...]`.
 - `changeDetection: ChangeDetectionStrategy.OnPush`.
 - État local en **signals** (`signal`, `computed`). Pour les Observables, utilise `toSignal()` ou le pipe `async`. Si un `subscribe` est inévitable, ajoute `takeUntilDestroyed()`.
 - Templates avec le nouveau control flow : `@if`, `@for (x of xs; track x.id)`, `@empty`. Pas de `*ngIf`/`*ngFor`.
@@ -118,8 +105,6 @@ Utilise `inject()` plutôt que l'injection par constructeur. Le service ne fait 
 - Sur une réponse 401, déconnecte l'utilisateur et redirige-le vers la page de connexion.
 
 ## 7. Tests (Jest + Cypress, un `.spec.ts` à côté de chaque fichier)
-
-Si la migration de l'étape 0.2 n'a pas encore été faite, écris les specs avec la syntaxe Jasmine existante et signale-le.
 
 - **Service** : `TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] })` + `HttpTestingController`. Vérifie l'URL et la méthode, puis appelle `httpMock.verify()` dans `afterEach`.
 - **Composant** : `imports: [LeComposant]`, avec les services mockés via `{ provide: XService, useValue: { methode: jest.fn().mockReturnValue(of(...)) } }` et `provideRouter([])` si le composant utilise le router. Vérifie le rendu après `fixture.detectChanges()`.

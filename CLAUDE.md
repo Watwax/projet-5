@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MDD — an OpenClassrooms full-stack project: a developer social network where users follow topics and read/write posts and comments. The repo holds two independent apps:
 
-- `back/` — Spring Boot 3.5 REST API (Java 21, Maven, Spring Data JPA, MySQL), package `com.openclassrooms.mddapi`
-- `front/` — Angular 20 client (target tests: Jest + Cypress; still Karma/Jasmine until migrated, see below)
+- `back/` — Spring Boot 4.2 REST API (Java 21, Maven wrapper 3.9, Spring Data JPA / Hibernate 7, Spring Security, MySQL 8), package `com.openclassrooms.mddapi`
+- `front/` — Angular 22 client (standalone, zoneless, TypeScript 6), unit tests with Jest, E2E with Cypress
 
-The project is early-stage: only `GET /topic` is implemented end-to-end on the server; `Post`/`Comment` entities and `PostService` are still in progress.
+Status: the environment is set up (dependencies, configuration, full model layer, security skeleton, Swagger, test tooling). Features are not implemented yet: only the legacy `GET /topic` exists (now answers 401, see Backend notes).
 
 ## Working mode: step-by-step
 
@@ -22,30 +22,33 @@ The project is early-stage: only `GET /topic` is implemented end-to-end on the s
 ### Backend (run from `back/`)
 
 ```bash
-mvn spring-boot:run                                   # start the API (always use this) → http://localhost:9000
-mvn clean package                                     # build jar (runs tests)
-mvn test                                              # all tests
-mvn test -Dtest=MddApiApplicationTests                # single test class
-mvn test -Dtest=MddApiApplicationTests#contextLoads   # single test method
+./mvnw spring-boot:run                                   # start the API (always use this) → http://localhost:9000
+./mvnw verify                                            # build + all tests + JaCoCo report (target/site/jacoco/index.html)
+./mvnw test                                              # all tests
+./mvnw test -Dtest=MddApiApplicationTests                # single test class
+./mvnw test -Dtest=MddApiApplicationTests#contextLoads   # single test method
 ```
 
-Requires a local MySQL (installed on the machine, no Docker — decided) with a database `mdd` at `localhost:3306`. Credentials are currently hard-coded `root`/`root` in `back/src/main/resources/application.properties`; target: read them (and the JWT secret) from `back/.env` (git-ignored, template `back/.env.example`) through `spring.config.import=optional:file:.env[.properties]`. The context-load test also needs this database.
+Running the API needs a local MySQL 8 (installed on the machine, no Docker — decided) with an empty database `mdd` at `localhost:3306`, and a `back/.env` file (git-ignored; template `back/.env.example`) providing `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRATION_MS`. It is loaded by `spring.config.import=optional:file:.env[.properties]`, relative to the working directory, so start the API from `back/`.
 
-Swagger UI (springdoc-openapi, once added): `http://localhost:9000/api/swagger`.
+Tests do **not** need MySQL nor `.env`: `src/test/resources/application.properties` replaces the main config with H2 in MySQL mode and a test JWT key.
+
+Swagger UI: `http://localhost:9000/api/swagger` (OpenAPI JSON: `/api/openapi`).
 
 ### Frontend (run from `front/`)
 
-Requires Node ≥ 20.19 / 22.12. The system default `node` on this machine is v12 and fails; use an nvm version, e.g. `export PATH="$HOME/.nvm/versions/node/v22.16.0/bin:$PATH"` (or `nvm use 22`) before any npm/ng command.
+Requires Node ≥ 24.15 (or ≥ 22.22.3) — Angular 22 refuses older versions. The system default `node` is v12; use `export PATH="$HOME/.nvm/versions/node/v24.22.3/bin:$PATH"` (or `nvm use 24`) before any npm/ng command. npm 11 blocks install scripts, so after a fresh `npm install` run `npx cypress install` once.
 
 ```bash
 npm install
-npm run start                                 # start the dev server (always use this) → http://localhost:4200
-npm run build                                 # output in dist/
-npm test                                      # currently Karma + Jasmine (Chrome)
-npx ng test --include src/app/topic           # run specs for a single folder/file (Karma)
+npm run start                     # dev server (always use this) → http://localhost:4200, proxies /api → :9000
+npm run build                     # output in dist/
+npm test                          # Jest unit tests
+npx jest src/app/topic            # specs of a single folder/file
+npm run test:coverage             # Jest + coverage (coverage/jest/index.html)
+npm run e2e                       # Cypress headless (needs API + dev server running)
+npm run cypress:open              # Cypress UI
 ```
-
-Target test tooling (decided, not installed yet — migrate when first touching front tests): **Jest** via `jest-preset-angular` for unit tests (`npm test`, `npm run test:coverage`, coverage in `front/coverage/`) and **Cypress** for E2E on sensitive flows (register, login, create post, comment), as in the author's previous project. Karma/Jasmine is deprecated and must be removed during the migration.
 
 No linter is configured.
 
@@ -57,25 +60,27 @@ No linter is configured.
 
 - Controllers depend on the service **interface**, injected via constructor (no field `@Autowired`).
 - Service implementations must be annotated `@Service` to be injected (note: `PostService` currently lacks it).
-- Entities are exposed directly from controllers for now (no DTO layer yet).
-- Entities use explicit table names (`topics`, `posts`, …) and explicit PK column names (`topic_id`, `post_id`); relations use `@ManyToOne` + `@JoinColumn` on the FK column name.
+- The legacy `TopicController` (`GET /topic`) still returns entities; it must become `GET /api/topics` with DTOs when the topics feature is built.
+- Model (done, Lombok `@Getter/@Setter/@NoArgsConstructor`): `User` (`users`: email/username unique, BCrypt password, `@ManyToMany subscriptions` via join table `subscriptions`), `Topic` (`topics`: unique name, description), `Post` (`posts`: title, TEXT content, `created_at` via `@CreationTimestamp`, LAZY `topic` + `author`), `Comment` (`comments`: TEXT content, `created_at`, LAZY `post` + `author`). PK columns are `<entity>_id`.
+- `config/SecurityConfiguration`: stateless, CSRF/basic/form login disabled, `/api/auth/**` and Swagger paths public, everything else authenticated, 401 answered as ProblemDetail JSON, `BCryptPasswordEncoder` bean. **No JWT filter yet** (added by the authentication feature), so every protected route answers 401. Until a `UserDetailsService` is declared, Boot logs a "generated security password" warning: harmless.
+- `config/OpenApiConfiguration`: API info + Bearer JWT scheme for Swagger UI.
+- Spring Boot 4 specifics: starters are `spring-boot-starter-webmvc` and per-module test starters (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-security-test`); test annotations moved, e.g. `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` / `AutoConfigureMockMvc` and `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`; Jackson 3 (`tools.jackson.*`) is the default JSON library.
 
 ### Database
 
-`spring.jpa.hibernate.ddl-auto=create` — Hibernate **drops and recreates the schema on every startup**, so all data is lost on restart. There are no migration or seed scripts yet.
+`spring.jpa.hibernate.ddl-auto=create` — Hibernate creates the schema from the entities and **drops it on every startup** (decided for the MVP, data loss accepted; Flyway is a post-MVP evolution). `src/main/resources/data.sql` then seeds the 8 topics (`spring.jpa.defer-datasource-initialization=true`, `spring.sql.init.mode=always`). Only topics are seeded — test accounts, posts and comments are created by hand through the app.
 
 ### Frontend
 
-Currently NgModule-based (not standalone) despite Angular 20: components are declared in `AppModule` with `standalone: false`. Migration to standalone is planned (see below). There is no routing, HTTP client, or API service wired up yet; the backend runs on port 9000 while the dev server runs on 4200 (no proxy config exists).
+Standalone and zoneless (no zone.js): `main.ts` → `bootstrapApplication(AppComponent, appConfig)`; `app.config.ts` provides the router (`withComponentInputBinding`) and `provideHttpClient(withInterceptors([]))` — register functional interceptors there. Routes live in `app.routes.ts` (only a placeholder lazy `topics` route for now). `proxy.conf.json` forwards `/api` to `http://localhost:9000`. Jest uses `jest-preset-angular` with `setupZonelessTestEnv()` (`setup-jest.ts`); Cypress specs live in `cypress/e2e/`. `src/styles.css` only has a reset: design tokens must come from the Figma mockups.
 
-## Target conventions (decided, not all implemented yet)
+## Target conventions (decided)
 
-New code should move toward these; existing code is migrated when touched:
+New code follows these; existing code is migrated when touched:
 
-- **Back**: DTOs (Java records) in `dto/request` (input) and `dto/response` (output) + hand-written `@Component` mapper classes (no MapStruct or other mapping library) — never expose JPA entities; Lombok (no `@Data` on entities); Spring Security with stateless JWT (jjwt 0.12), all routes under `/api` and authenticated except `/api/auth/**` and the Swagger paths; Bean Validation (`spring-boot-starter-validation`) for request DTOs; errors as business exceptions in `exception/` turned into **ProblemDetail** (RFC 9457) by a single `@RestControllerAdvice`; API documented with **springdoc-openapi** (Swagger UI at `/api/swagger`, OpenAPI JSON at `/api/openapi`); secrets in `.env`; **JavaDoc** on every public method of services and controllers.
+- **Back**: DTOs (Java records) in `dto/request` (input) and `dto/response` (output) + hand-written `@Component` mapper classes (no MapStruct or other mapping library) — never expose JPA entities; Lombok (no `@Data` on entities); Spring Security with stateless JWT (jjwt 0.13), all routes under `/api` and authenticated except `/api/auth/**` and the Swagger paths; Bean Validation (`spring-boot-starter-validation`) for request DTOs; errors as business exceptions in `exception/` turned into **ProblemDetail** (RFC 9457) by a single `@RestControllerAdvice`; API documented with **springdoc-openapi** (Swagger UI at `/api/swagger`, OpenAPI JSON at `/api/openapi`); secrets in `.env`; **JavaDoc** on every public method of services and controllers.
 - **Back tests**: JUnit 5 + Mockito for services and mappers, `@WebMvcTest` + MockMvc for controllers, `@SpringBootTest` integration tests on **H2 in MySQL mode** (test scope, no MySQL needed), coverage with **JaCoCo**.
-- **Front**: standalone components (migrate away from `AppModule`), signals + new control flow (`@if`/`@for`), functional interceptors/guards, relative `/api/...` URLs through an Angular dev proxy to port 9000. No UI library — hand-written styles, shared design tokens as CSS custom properties on `:root` in `src/styles.css`. Tests with Jest + Cypress (see Commands).
-- **Database**: keep `ddl-auto=create` + `data.sql` (topics seed) for the MVP — decided, data loss on restart is accepted; Flyway is a post-MVP evolution.
+- **Front**: standalone components (default: never write `standalone: true`), signals + new control flow (`@if`/`@for`), functional interceptors/guards, relative `/api/...` URLs through the dev proxy. No UI library — hand-written styles, shared design tokens as CSS custom properties on `:root` in `src/styles.css`. Tests with Jest (`jest.fn()` mocks) + Cypress E2E for sensitive flows.
 
 ## Product scope (MVP) — source: `docsForContext/`
 

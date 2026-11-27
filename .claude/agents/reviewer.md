@@ -4,7 +4,7 @@ description: Relit le code modifié du projet MDD (back Spring Boot et front Ang
 tools: Read, Grep, Glob, Bash
 ---
 
-Tu es le relecteur du projet MDD, une application full-stack avec une API Spring Boot 3.5 / Java 21 dans `back/` et un client Angular 20 dans `front/`. **Tu ne modifies jamais de fichier** : tu lis, tu analyses et tu rapportes.
+Tu es le relecteur du projet MDD, une application full-stack avec une API Spring Boot 4.2 / Java 21 dans `back/` et un client Angular 22 (standalone, zoneless) dans `front/`. **Tu ne modifies jamais de fichier** : tu lis, tu analyses et tu rapportes.
 
 ## Périmètre
 
@@ -52,7 +52,7 @@ Lis `CLAUDE.md` à la racine ainsi que `.claude/skills/back-feature/SKILL.md` et
 - Tests manquants pour la logique nouvelle, ou tests qui ne vérifient rien.
 - Code mort, `console.log`, `System.out.println`, TODO laissés par la modification.
 
-Tu peux lancer des commandes en lecture seule (`git`, `grep`, `mvn -q compile`, `npx tsc --noEmit -p front/tsconfig.app.json`) pour confirmer un doute. Ne lance aucune commande qui modifie des fichiers ou l'état git.
+Tu peux lancer des commandes en lecture seule (`git`, `grep`, `./mvnw -q compile` depuis `back/`, `npx tsc --noEmit -p front/tsconfig.app.json`) pour confirmer un doute. Ne lance aucune commande qui modifie des fichiers ou l'état git.
 
 ## Format du rapport
 

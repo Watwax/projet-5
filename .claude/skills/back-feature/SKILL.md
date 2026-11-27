@@ -14,15 +14,11 @@ Travaille dans `back/` (package racine `com.openclassrooms.mddapi`). Avance éta
 
 1. Relis la section « Product scope (MVP) » de `CLAUDE.md` : domaine, règles métier et **table de l'API cible**. L'endpoint que tu crées doit correspondre à cette table (chemin, body, réponse, codes d'erreur). Si la feature demandée n'est pas dans les spécifications (back-office, édition ou suppression d'article, sous-commentaires…), signale-le à l'utilisateur avant de coder. En cas de doute, relis `docsForContext/specificationsFonctionnelles.pdf`.
 2. Lis les classes existantes liées à la feature dans `model/`, `repository/`, `service/` et `controller/`.
-3. Vérifie dans `back/pom.xml` que les dépendances nécessaires sont présentes. S'il en manque, ajoute-les et signale-le à l'utilisateur. Les contraintes techniques imposent de **privilégier un module Spring** à une librairie tierce :
-   - **Validation** (`spring-boot-starter-validation`) dès qu'un endpoint reçoit un body.
-   - **Lombok** (`org.projectlombok:lombok`, `<optional>true</optional>`), déclaré aussi dans `maven-compiler-plugin` → `annotationProcessorPaths`, comme le fait Spring Initializr. Il doit aussi être exclu du jar dans `spring-boot-maven-plugin`.
-   - **Pas de MapStruct** ni d'autre librairie de mapping : les mappers sont écrits à la main.
-   - **Spring Security + JWT** (`spring-boot-starter-security`, `io.jjwt:jjwt-api/impl/jackson` 0.12.x) seulement si la feature touche à l'authentification.
-   - **Swagger** (`org.springdoc:springdoc-openapi-starter-webmvc-ui`, version compatible avec Spring Boot 3.5) dès le premier controller ajouté ou modifié, avec `springdoc.swagger-ui.path=/api/swagger` et `springdoc.api-docs.path=/api/openapi`. Exemple fonctionnel : `../../Projet3/chatop` (`config/OpenApiConfiguration.java`, `application.properties`).
-   - **Tests** : `com.h2database:h2` en scope `test` pour les tests d'intégration, et `jacoco-maven-plugin` (goals `prepare-agent` + `report`) pour la couverture. Exemple : le pom de `../../Projet4/Testez-et-am-liorez-une-application-full-stack/back`.
-   - **Secrets** : si `back/.env` n'existe pas encore, ajoute `spring.config.import=optional:file:.env[.properties]` dans `application.properties`, remplace les valeurs en dur (`spring.datasource.username/password`, secret JWT) par `${DB_USERNAME}`, `${DB_PASSWORD}`, `${JWT_SECRET}`…, crée `back/.env.example` (versionné, sans vraie valeur) et ajoute `.env` au `.gitignore`. Préviens l'utilisateur qu'il doit créer son `back/.env`.
-4. Si la feature a besoin d'un utilisateur connecté et que Spring Security n'est pas encore configuré, **ne le monte pas en douce dans une autre feature**. Préviens l'utilisateur et propose de faire d'abord la feature « authentification ».
+3. L'environnement est en place (Spring Boot 4.2, Java 21) : `back/pom.xml` contient déjà Spring Web MVC, Data JPA, Security, Validation, jjwt 0.13 (api/impl/jackson), springdoc-openapi 3.2 (Swagger), Lombok (avec `annotationProcessorPaths` et exclu du jar), H2 (test), les starters de test et JaCoCo. N'ajoute une dépendance que si la feature en a vraiment besoin : signale-le, et **privilégie un module Spring** à une librairie tierce (contrainte du client). **Pas de MapStruct** ni d'autre librairie de mapping.
+   - Spring Boot 4 : starters `spring-boot-starter-webmvc` et starters de test par module (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-security-test`) ; Jackson 3 (`tools.jackson.*`) par défaut.
+   - Configuration : `application.properties` lit `back/.env` (`spring.config.import=optional:file:.env[.properties]`). Toute nouvelle valeur secrète passe par une variable `${...}` déclarée aussi dans `back/.env.example` (versionné, sans vraie valeur) ; préviens l'utilisateur qu'il doit l'ajouter à son `.env`.
+   - Exemples fonctionnels d'un projet précédent : `../../Projet3/chatop` (Spring Boot 4.1 : `security/JwtService.java`, `security/JwtAuthenticationFilter.java`, `exception/`).
+4. `config/SecurityConfiguration` existe (sans état, routes publiques `/api/auth/**` et Swagger, 401 en ProblemDetail, bean `PasswordEncoder` BCrypt), mais **sans filtre JWT** : toute route protégée répond 401 tant que la feature « authentification » n'est pas faite. Si la feature demandée a besoin d'un utilisateur connecté et que `security/JwtAuthenticationFilter` n'existe pas, **ne monte pas l'authentification en douce** : préviens l'utilisateur et propose de faire d'abord la feature « authentification ».
 
 ## 1. Entité (`model/`)
 
@@ -32,12 +28,8 @@ Travaille dans `back/` (package racine `com.openclassrooms.mddapi`). Avance éta
 - Relations : `@ManyToOne(fetch = FetchType.LAZY)` + `@JoinColumn(name = "<autre>_id")`. Évite les `@OneToMany` bidirectionnels s'il n'y en a pas besoin.
 - Dates : `@CreationTimestamp private LocalDateTime createdAt;`.
 - Quand tu touches une entité existante écrite à la main (getters/setters), migre-la vers Lombok.
-- Modèle cible (voir `CLAUDE.md`) :
-  - `User` : `email` et `username` avec `unique = true`, `password`, et `@ManyToMany` `Set<Topic> subscriptions` avec `@JoinTable(name = "subscriptions", joinColumns = user_id, inverseJoinColumns = topic_id)`.
-  - `Topic` : `name`, `description`.
-  - `Post` : `title`, `content` (`@Column(columnDefinition = "TEXT")`), `topic`, `author`, `createdAt`.
-  - `Comment` : `content`, `post`, `author`, `createdAt`. Pas de commentaire parent : les commentaires ne sont pas récursifs.
-- Les thèmes n'ont pas d'écran de création : ils sont insérés au démarrage via `src/main/resources/data.sql`. Comme `ddl-auto=create`, ajoute `spring.jpa.defer-datasource-initialization=true` et `spring.sql.init.mode=always`.
+- Le modèle est en place (voir `CLAUDE.md` → Backend layering) : `User` (email et username uniques, mot de passe BCrypt, `@ManyToMany Set<Topic> subscriptions` via la table `subscriptions`), `Topic` (name unique, description), `Post` (title, content TEXT, createdAt, topic, author) et `Comment` (content, createdAt, post, author ; pas de commentaire parent). Ne le modifie que si la feature l'exige, et garde la base cohérente avec le modèle de données de `JustificationsDesChoix.docx` (section 2.3).
+- Les thèmes sont insérés au démarrage par `src/main/resources/data.sql` (`ddl-auto=create`, `spring.jpa.defer-datasource-initialization=true`, `spring.sql.init.mode=always`). Écris un SQL compatible MySQL **et** H2 (les tests l'exécutent aussi).
 
 ## 2. Repository (`repository/`)
 
@@ -125,11 +117,11 @@ public class PostMapper {
 
 - **Mapper** : test unitaire simple (`new XxxMapper()`), sans Spring ni mock. Vérifie que chaque champ est copié, y compris les champs aplatis des relations.
 - **Service** : test unitaire `@ExtendWith(MockitoExtension.class)`, avec `@Mock` sur le repository, le vrai mapper via `@Spy private XxxMapper mapper = new XxxMapper();` et `@InjectMocks` sur le service. Couvre le cas nominal et le cas d'erreur (404…).
-- **Controller** : `@WebMvcTest(XxxController.class)` + `MockMvc`, et `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean` ; `@MockBean` est déprécié) sur le service. Si la sécurité est active, ajoute `@WithMockUser` et importe la config de sécurité.
-- **Intégration** (`XxxIntegrationTest`) : `@SpringBootTest` + `@AutoConfigureMockMvc` sur une base **H2 en mode MySQL**, configurée dans `src/test/resources/application.properties` (`jdbc:h2:mem:mdd;MODE=MySQL;DB_CLOSE_DELAY=-1`, secret JWT de test). Parcours réel avec un vrai token : inscription, connexion, puis appel de l'endpoint ; vérifie aussi le 401 sans token. Un ou deux scénarios par feature suffisent : on teste les cas sensibles, pas toute l'application.
-- Lance uniquement les tests concernés : `cd back && mvn test -Dtest='XxxServiceTest,XxxControllerTest,XxxIntegrationTest'`. Tant que H2 n'est pas en place, `MddApiApplicationTests` a besoin de MySQL : ne t'en sers pas comme preuve que la feature marche.
-- Couverture : `mvn verify`, rapport dans `back/target/site/jacoco/index.html`.
-- Termine par `mvn compile` (ou le test) pour vérifier que Lombok génère bien le code.
+- **Controller** : `@WebMvcTest(XxxController.class)` (`org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` depuis Spring Boot 4) + `MockMvc`, et `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean` ; `@MockBean` est déprécié) sur le service. Si la sécurité est active, ajoute `@WithMockUser` et importe la config de sécurité.
+- **Intégration** (`XxxIntegrationTest`) : `@SpringBootTest` + `@AutoConfigureMockMvc` (`org.springframework.boot.webmvc.test.autoconfigure`) sur la base **H2 en mode MySQL** déjà configurée dans `src/test/resources/application.properties` (avec un secret JWT de test). Parcours réel avec un vrai token : inscription, connexion, puis appel de l'endpoint ; vérifie aussi le 401 sans token. Un ou deux scénarios par feature suffisent : on teste les cas sensibles, pas toute l'application.
+- Lance uniquement les tests concernés : `cd back && ./mvnw test -Dtest='XxxServiceTest,XxxControllerTest,XxxIntegrationTest'`. `MddApiApplicationTests` ne vérifie que le chargement du contexte : ce n'est pas une preuve que la feature marche.
+- Couverture : `./mvnw verify`, rapport dans `back/target/site/jacoco/index.html`.
+- Termine par `./mvnw compile` (ou le test) pour vérifier que Lombok génère bien le code.
 
 ## 9. Fin
 
@@ -139,4 +131,4 @@ Résume pour l'utilisateur, sous une forme réutilisable dans `JustificationsDes
 - **Tests** lancés, avec leur résultat (section 3.1) ;
 - les écarts éventuels avec la table de l'API cible de `CLAUDE.md`. Si l'API a changé, mets cette table à jour.
 
-Rappelle que `ddl-auto=create` recrée le schéma à chaque démarrage.
+Rappelle que `ddl-auto=create` recrée le schéma à chaque démarrage : les comptes et articles de test sont perdus.
